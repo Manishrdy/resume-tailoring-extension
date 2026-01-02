@@ -1,3 +1,14 @@
+"""
+Resume Tailor API - Main Application Entry Point
+
+A FastAPI backend service that processes job descriptions and tailors resumes
+using Google's Gemini AI.
+
+IMPORTANT:
+- All logging must go through the centralized logger service
+- Resume path must ONLY be accessed via config.settings.resume_path
+"""
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,9 +21,6 @@ from logger import setup_logging, get_logger
 
 # Import configuration
 from config import settings
-print("Loaded resume filename:", settings.resume_filename)
-print("Resume path:", settings.resume_path)
-print("Exists:", settings.resume_path.exists())
 
 # Initialize logging before anything else
 setup_logging(
@@ -36,6 +44,7 @@ from exceptions import (
     ResumeNotFoundError,
     GeminiAPIError,
     DocumentGenerationError,
+    InvalidJobDescriptionError,
 )
 
 
@@ -265,7 +274,7 @@ async def tailor_resume(request: TailorRequest) -> TailorResponse:
     1. Reads the base resume from storage (via config.settings.resume_path)
     2. Analyzes the job description
     3. Uses Gemini AI to tailor the resume
-    4. Generates PDF and/or DOCX output files
+    4. Generates PDF and/or DOCX output files (Phase 4)
     
     Args:
         request: TailorRequest containing job description and options
@@ -273,6 +282,9 @@ async def tailor_resume(request: TailorRequest) -> TailorResponse:
     Returns:
         TailorResponse: Status and paths to generated files
     """
+    import time
+    start_time = time.time()
+    
     logger.info(
         f"Tailor request received",
         extra={
@@ -283,24 +295,105 @@ async def tailor_resume(request: TailorRequest) -> TailorResponse:
         },
     )
     
-    # Log resume being used (path accessed via config)
-    logger.debug(f"Using resume: {settings.resume_path}")
+    # Import services
+    from services.resume_parser import ResumeParser
+    from services.gemini_service import GeminiService
     
-    # Phase 1: Return placeholder response
-    # Actual implementation will be added in subsequent phases
-    
-    response = TailorResponse(
-        status="success",
-        message="Resume tailoring endpoint ready. Full implementation coming in Phase 2-4.",
-        job_title=request.job_title,
-        company=request.company,
-        files_generated=[],
-        output_formats=request.output_formats,
-    )
-    
-    logger.info("Tailor request completed (placeholder response)")
-    
-    return response
+    try:
+        # Step 1: Parse the resume (path accessed via config)
+        logger.info(f"Parsing resume: {settings.resume_path}")
+        parser = ResumeParser(settings.resume_path)
+        parsed_resume = parser.parse()
+        
+        logger.info(
+            f"Resume parsed: {parsed_resume.word_count} words, "
+            f"{len(parsed_resume.skills)} skills found"
+        )
+        
+        # Step 2: Initialize Gemini service and tailor the resume
+        logger.info("Initializing Gemini service...")
+        gemini = GeminiService(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model
+        )
+        
+        # Step 3: Tailor the resume using AI
+        logger.info("Tailoring resume with Gemini AI...")
+        tailored = gemini.tailor_resume(
+            resume_text=parsed_resume.raw_text,
+            job_description=request.job_description,
+            job_title=request.job_title,
+            company=request.company,
+            emphasis_keywords=request.emphasis_keywords,
+        )
+        
+        # Step 4: Generate documents
+        logger.info(f"Generating documents in formats: {request.output_formats}")
+        from services.document_gen import DocumentGenerator
+        
+        doc_generator = DocumentGenerator(settings.output_dir)
+        
+        # Get candidate name from parsed resume
+        candidate_name = None
+        if parsed_resume.contact_info and parsed_resume.contact_info.name:
+            candidate_name = parsed_resume.contact_info.name
+        
+        generated_docs = doc_generator.generate(
+            content=tailored.tailored_text,
+            formats=request.output_formats,
+            job_title=request.job_title,
+            company=request.company,
+            candidate_name=candidate_name,
+        )
+        
+        # Convert to response model
+        from models import GeneratedFile
+        files_generated = [
+            GeneratedFile(
+                filename=doc.filename,
+                format=doc.format,
+                path=str(doc.path),
+                size_bytes=doc.size_bytes,
+                download_url=f"/download/{doc.filename}",
+            )
+            for doc in generated_docs
+        ]
+        
+        # Calculate processing time
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        response = TailorResponse(
+            status="success",
+            message=tailored.summary or "Resume tailored successfully",
+            job_title=request.job_title,
+            company=request.company,
+            files_generated=files_generated,
+            output_formats=request.output_formats,
+            keywords_matched=tailored.matched_keywords,
+            processing_time_ms=processing_time_ms,
+            tailored_content=tailored.tailored_text,
+            suggestions=tailored.suggestions,
+            ats_score=tailored.ats_score,
+        )
+        
+        logger.info(
+            f"Tailor request completed in {processing_time_ms}ms. "
+            f"Generated {len(files_generated)} files, "
+            f"Matched {len(tailored.matched_keywords)} keywords, "
+            f"ATS score: {tailored.ats_score}"
+        )
+        
+        return response
+        
+    except FileNotFoundError as e:
+        logger.error(f"Resume file not found: {e}")
+        raise ResumeNotFoundError(
+            filename=settings.resume_filename,
+            path=str(settings.resume_path)
+        )
+    except Exception as e:
+        logger.exception(f"Error tailoring resume: {e}")
+        raise
 
 
 @app.get(
@@ -358,6 +451,242 @@ async def get_resume_info():
     logger.info(f"Resume info: {info['filename']} (exists: {info['exists']})")
     
     return info
+
+
+@app.get(
+    "/resume/parse",
+    tags=["Resume"],
+    summary="Parse Resume",
+    description="Parse the configured resume and return structured content",
+)
+async def parse_resume():
+    """
+    Parse the configured resume file and return structured data.
+    
+    This endpoint extracts:
+    - Contact information
+    - Skills
+    - Resume sections
+    - Word count
+    
+    Returns:
+        dict: Parsed resume data
+    """
+    logger.info("Resume parse requested")
+    
+    from services.resume_parser import ResumeParser
+    
+    try:
+        parser = ResumeParser(settings.resume_path)
+        parsed = parser.parse()
+        
+        return {
+            "status": "success",
+            "data": parsed.to_dict(),
+            "raw_text_preview": parsed.raw_text[:500] + "..." if len(parsed.raw_text) > 500 else parsed.raw_text,
+        }
+        
+    except FileNotFoundError as e:
+        logger.error(f"Resume file not found: {e}")
+        raise ResumeNotFoundError(
+            filename=settings.resume_filename,
+            path=str(settings.resume_path)
+        )
+    except Exception as e:
+        logger.exception(f"Error parsing resume: {e}")
+        raise
+
+
+@app.post(
+    "/job/extract",
+    tags=["Job"],
+    summary="Extract Job Details",
+    description="Extract structured information from a job description",
+)
+async def extract_job_details(job_description: str):
+    """
+    Extract structured information from a job description.
+    
+    Uses Gemini AI to parse the job description and extract:
+    - Job title and company
+    - Required and preferred skills
+    - Responsibilities and requirements
+    - Benefits and salary information
+    
+    Args:
+        job_description: Raw job description text
+        
+    Returns:
+        dict: Extracted job details
+    """
+    logger.info("Job extraction requested")
+    
+    from services.gemini_service import GeminiService
+    
+    if len(job_description) < 50:
+        raise InvalidJobDescriptionError("Job description too short (minimum 50 characters)")
+    
+    try:
+        gemini = GeminiService(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model
+        )
+        
+        details = gemini.extract_job_details(job_description)
+        
+        return {
+            "status": "success",
+            "data": details.to_dict(),
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error extracting job details: {e}")
+        raise
+
+
+@app.get(
+    "/gemini/test",
+    tags=["Configuration"],
+    summary="Test Gemini Connection",
+    description="Test the connection to Gemini API",
+)
+async def test_gemini():
+    """
+    Test the Gemini API connection.
+    
+    Returns:
+        dict: Connection test result
+    """
+    logger.info("Gemini connection test requested")
+    
+    from services.gemini_service import GeminiService
+    
+    if not settings.gemini_api_key:
+        return {
+            "status": "error",
+            "message": "GEMINI_API_KEY not configured",
+            "connected": False,
+        }
+    
+    try:
+        gemini = GeminiService(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model
+        )
+        
+        connected = gemini.test_connection()
+        
+        return {
+            "status": "success" if connected else "error",
+            "message": "Connection successful" if connected else "Connection failed",
+            "connected": connected,
+            "model": settings.gemini_model,
+        }
+        
+    except Exception as e:
+        logger.error(f"Gemini connection test failed: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "connected": False,
+        }
+
+
+@app.get(
+    "/download/{filename}",
+    tags=["Files"],
+    summary="Download Generated File",
+    description="Download a generated resume file",
+)
+async def download_file(filename: str):
+    """
+    Download a generated resume file.
+    
+    Args:
+        filename: Name of the file to download
+        
+    Returns:
+        FileResponse: The requested file
+    """
+    from fastapi.responses import FileResponse
+    
+    logger.info(f"Download requested: {filename}")
+    
+    file_path = settings.output_dir / filename
+    
+    if not file_path.exists():
+        logger.warning(f"File not found: {filename}")
+        raise ResumeNotFoundError(filename=filename, path=str(file_path))
+    
+    # Determine media type
+    media_type = "application/octet-stream"
+    if filename.endswith('.pdf'):
+        media_type = "application/pdf"
+    elif filename.endswith('.docx'):
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=media_type,
+    )
+
+
+@app.get(
+    "/files",
+    tags=["Files"],
+    summary="List Generated Files",
+    description="List all generated resume files",
+)
+async def list_files():
+    """
+    List all generated resume files.
+    
+    Returns:
+        dict: List of generated files
+    """
+    logger.debug("File listing requested")
+    
+    from services.document_gen import DocumentGenerator
+    
+    doc_generator = DocumentGenerator(settings.output_dir)
+    files = doc_generator.list_generated_files()
+    
+    return {
+        "status": "success",
+        "count": len(files),
+        "files": files,
+    }
+
+
+@app.delete(
+    "/files/cleanup",
+    tags=["Files"],
+    summary="Cleanup Old Files",
+    description="Remove old generated files",
+)
+async def cleanup_files(keep_count: int = 10):
+    """
+    Remove old generated files, keeping only recent ones.
+    
+    Args:
+        keep_count: Number of files to keep (default: 10)
+        
+    Returns:
+        dict: Cleanup result
+    """
+    logger.info(f"File cleanup requested, keeping {keep_count} files")
+    
+    from services.document_gen import DocumentGenerator
+    
+    doc_generator = DocumentGenerator(settings.output_dir)
+    deleted = doc_generator.cleanup_old_files(keep_count)
+    
+    return {
+        "status": "success",
+        "deleted_count": deleted,
+        "message": f"Deleted {deleted} old files",
+    }
 
 
 # ===========================================

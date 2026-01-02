@@ -132,6 +132,23 @@ class TailorResponse(BaseModel):
         description="Time taken to process the request in milliseconds",
     )
     
+    tailored_content: Optional[str] = Field(
+        default=None,
+        description="The AI-tailored resume content",
+    )
+    
+    suggestions: Optional[list[str]] = Field(
+        default=None,
+        description="AI suggestions for improving the resume",
+    )
+    
+    ats_score: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Estimated ATS compatibility score (0-100)",
+    )
+    
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="Timestamp when the response was created",
