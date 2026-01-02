@@ -203,6 +203,7 @@ class DocumentGenerator:
             def __init__(self):
                 super().__init__()
                 self.set_auto_page_break(auto=True, margin=15)
+                self.set_margins(15, 15, 15)  # Left, Top, Right margins
             
             def header(self):
                 pass  # No header needed
@@ -216,6 +217,9 @@ class DocumentGenerator:
         pdf = ResumePDF()
         pdf.add_page()
         
+        # Page width for calculations (A4 = 210mm, minus margins)
+        page_width = 210 - 30  # 180mm usable width
+        
         # Parse and format content
         lines = content.split('\n')
         
@@ -226,7 +230,7 @@ class DocumentGenerator:
             line = line.strip()
             
             if not line:
-                pdf.ln(4)
+                pdf.ln(3)
                 continue
             
             # Check if line is a section header (ALL CAPS or common headers)
@@ -235,8 +239,16 @@ class DocumentGenerator:
             # Check for separator lines
             if self._is_separator(line):
                 pdf.set_draw_color(200, 200, 200)
-                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                y = pdf.get_y()
+                pdf.line(15, y, 195, y)
                 pdf.ln(3)
+                continue
+            
+            # Clean the text for PDF
+            clean_text = self._clean_text_for_pdf(line)
+            
+            # Skip empty lines after cleaning
+            if not clean_text.strip():
                 continue
             
             # Format based on line type
@@ -244,34 +256,39 @@ class DocumentGenerator:
                 # First line is usually the name
                 pdf.set_font('Helvetica', 'B', 16)
                 pdf.set_text_color(0, 0, 0)
-                pdf.cell(0, 10, self._clean_text_for_pdf(line), ln=True, align='C')
+                pdf.cell(0, 10, clean_text, ln=True, align='C')
                 is_first_content = False
             elif is_header:
                 # Section header
-                pdf.ln(4)
+                pdf.ln(3)
                 pdf.set_font('Helvetica', 'B', 11)
                 pdf.set_text_color(44, 62, 80)
-                pdf.cell(0, 8, self._clean_text_for_pdf(line), ln=True)
+                pdf.cell(0, 7, clean_text, ln=True)
                 pdf.set_draw_color(44, 62, 80)
-                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                y = pdf.get_y()
+                pdf.line(15, y, 195, y)
                 pdf.ln(2)
             elif line.startswith('•') or line.startswith('-') or line.startswith('*'):
-                # Bullet point
+                # Bullet point - use indentation with cell width instead of set_x
                 pdf.set_font('Helvetica', '', 10)
                 pdf.set_text_color(0, 0, 0)
-                clean_line = line.lstrip('•-* ')
-                pdf.set_x(15)
-                pdf.multi_cell(0, 5, f"• {self._clean_text_for_pdf(clean_line)}")
+                clean_line = line.lstrip('•-* \t')
+                clean_line = self._clean_text_for_pdf(clean_line)
+                if clean_line.strip():
+                    # Add bullet indent using cell, then multi_cell for text
+                    pdf.cell(5, 5, "-", ln=False)
+                    pdf.multi_cell(0, 5, clean_line)
             elif '|' in line and len(line.split('|')) >= 2:
                 # Contact info or inline data
                 pdf.set_font('Helvetica', '', 9)
                 pdf.set_text_color(80, 80, 80)
-                pdf.cell(0, 6, self._clean_text_for_pdf(line), ln=True, align='C')
+                pdf.cell(0, 6, clean_text, ln=True, align='C')
             else:
                 # Regular text
                 pdf.set_font('Helvetica', '', 10)
                 pdf.set_text_color(0, 0, 0)
-                pdf.multi_cell(0, 5, self._clean_text_for_pdf(line))
+                if clean_text.strip():
+                    pdf.multi_cell(0, 5, clean_text)
         
         pdf.output(output_path)
         logger.debug(f"PDF generated successfully: {output_path}")
@@ -407,7 +424,7 @@ class DocumentGenerator:
     
     def _clean_text_for_pdf(self, text: str) -> str:
         """Clean text for PDF compatibility."""
-        # Replace problematic characters
+        # Replace problematic characters with ASCII equivalents
         replacements = {
             '"': '"',
             '"': '"',
@@ -416,16 +433,52 @@ class DocumentGenerator:
             '–': '-',
             '—': '-',
             '…': '...',
-            '•': '*',
+            '•': '-',
+            '·': '-',
+            '●': '-',
+            '○': '-',
+            '■': '-',
+            '□': '-',
+            '▪': '-',
+            '▫': '-',
+            '→': '->',
+            '←': '<-',
+            '↑': '^',
+            '↓': 'v',
+            '✓': '[x]',
+            '✗': '[ ]',
+            '★': '*',
+            '☆': '*',
+            '©': '(c)',
+            '®': '(R)',
+            '™': '(TM)',
+            '°': ' degrees',
+            '±': '+/-',
+            '×': 'x',
+            '÷': '/',
+            '≤': '<=',
+            '≥': '>=',
+            '≠': '!=',
+            '∞': 'infinity',
+            '\u200b': '',  # Zero-width space
+            '\u00a0': ' ',  # Non-breaking space
+            '\ufeff': '',  # BOM
         }
         
         for old, new in replacements.items():
             text = text.replace(old, new)
         
-        # Remove any remaining non-latin1 characters for basic PDF compatibility
-        text = text.encode('latin-1', 'replace').decode('latin-1')
+        # Remove any remaining non-latin1 characters
+        cleaned = []
+        for char in text:
+            try:
+                char.encode('latin-1')
+                cleaned.append(char)
+            except UnicodeEncodeError:
+                # Replace with space or skip
+                cleaned.append(' ')
         
-        return text
+        return ''.join(cleaned)
     
     def list_generated_files(self) -> list[dict]:
         """

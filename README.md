@@ -1,53 +1,33 @@
 # Resume Tailor
 
-AI-powered Chrome extension that tailors your resume to match job descriptions using Google's Gemini API.
+AI-powered Chrome extension that automatically tailors your resume to match job descriptions using Google's Gemini API.
 
-## Overview
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.11+-green)
+![License](https://img.shields.io/badge/license-MIT-gray)
 
-Resume Tailor is a local-first tool that:
-1. Captures job descriptions from any webpage via Chrome extension
-2. Analyzes the job requirements using Gemini AI
-3. Tailors your resume to highlight relevant skills and experience
-4. Generates professionally formatted PDF and DOCX outputs
+## Features
+
+- 🤖 **AI-Powered Tailoring** - Uses Google Gemini to intelligently rewrite your resume
+- 📄 **Multi-Format Support** - Reads PDF/DOCX resumes, outputs PDF/DOCX
+- 🔍 **Smart Extraction** - Automatically extracts job descriptions from job sites
+- 📊 **ATS Scoring** - Estimates how well your resume will perform with ATS systems
+- 🏷️ **Keyword Matching** - Shows which keywords from the job description match your experience
+- 💡 **Suggestions** - Provides actionable recommendations to improve your resume
+- 🔒 **Local Processing** - All data stays on your machine
 
 ## Architecture
 
 ```
-┌─────────────────────┐         ┌─────────────────────┐
-│  Chrome Extension   │  HTTP   │  Local Python Server │
-│  (JavaScript)       │◄───────►│  (FastAPI)          │
-│                     │ :5000   │                      │
-│  • Capture webpage  │         │  • Parse resume      │
-│  • UI/Popup         │         │  • Call Gemini API   │
-│  • Download file    │         │  • Generate PDF/DOCX │
-└─────────────────────┘         └─────────────────────┘
-```
-
-## Key Design Principles
-
-### 1. Centralized Logging
-All logging goes through `/backend/logger.py`. Never create loggers directly:
-
-```python
-# Correct
-from logger import get_logger
-logger = get_logger(__name__)
-
-# Wrong - Don't do this
-import logging
-logger = logging.getLogger(__name__)
-```
-
-### 2. Configuration via .env Only
-All file paths (especially resume) are accessed ONLY through configuration:
-
-```python
-# Correct - Always use config
-from config import settings
-resume_path = settings.resume_path
-
-# Wrong - Never hardcode paths
-resume_path = Path("resume/my_resume.pdf")
+┌─────────────────────────┐              ┌─────────────────────────┐
+│   Chrome Extension      │    HTTP      │    Python Backend       │
+│   ─────────────────     │◄────────────►│    ───────────────      │
+│                         │  localhost   │                         │
+│   • Extract JD from     │    :5000     │   • Parse Resume        │
+│     job pages           │              │   • Gemini AI           │
+│   • Beautiful UI        │              │   • Generate PDF/DOCX   │
+│   • Download files      │              │   • Logging & Config    │
+└─────────────────────────┘              └─────────────────────────┘
 ```
 
 ## Quick Start
@@ -56,12 +36,12 @@ resume_path = Path("resume/my_resume.pdf")
 
 - Python 3.11+
 - Google Chrome or Chromium browser
-- Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
+- Google Gemini API key ([Get one free](https://aistudio.google.com/app/apikey))
 
 ### 1. Setup Backend
 
 ```bash
-# Navigate to project directory
+# Clone or extract the project
 cd resume-tailor
 
 # Create virtual environment
@@ -80,28 +60,26 @@ pip install -r backend/requirements.txt
 ### 2. Configure Environment
 
 ```bash
-# Copy example environment file
+# Copy example config
 cp .env.example .env
+
+# Edit .env with your settings
 ```
 
-Edit `.env` and configure:
-
+**Required settings in `.env`:**
 ```env
-# REQUIRED: Your Gemini API key
-GEMINI_API_KEY=your_actual_api_key
-
-# REQUIRED: Your resume filename
+GEMINI_API_KEY=your_gemini_api_key_here
 RESUME_FILENAME=your_resume.pdf
 ```
 
 ### 3. Add Your Resume
 
-Place your resume in the `resume/` directory:
 ```bash
+# Copy your resume to the resume folder
 cp /path/to/your/resume.pdf resume/
-```
 
-Then update `RESUME_FILENAME` in `.env` to match.
+# Make sure RESUME_FILENAME in .env matches your file
+```
 
 ### 4. Start the Server
 
@@ -110,16 +88,60 @@ cd backend
 python app.py
 ```
 
-Or with uvicorn:
+Server will start at `http://localhost:5000`
+
+### 5. Install Chrome Extension
+
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer mode** (top right toggle)
+3. Click **Load unpacked**
+4. Select the `extension` folder from this project
+5. Pin the extension to your toolbar
+
+### 6. Generate Extension Icons (Optional)
+
 ```bash
-uvicorn app:app --host 127.0.0.1 --port 5000 --reload
+cd extension/icons
+pip install Pillow
+python generate_icons.py
 ```
 
-### 5. Verify Installation
+Then reload the extension in Chrome.
 
-- **Swagger Docs:** http://localhost:5000/docs
-- **Health Check:** http://localhost:5000/health
-- **Configuration:** http://localhost:5000/config
+## Usage
+
+### Using the Extension
+
+1. Navigate to any job posting (LinkedIn, Indeed, Glassdoor, etc.)
+2. Click the Resume Tailor extension icon
+3. Click **Extract** to auto-fill the job description, or paste manually
+4. (Optional) Add job title, company, and extra keywords
+5. Select output formats (PDF, DOCX, or both)
+6. Click **Tailor Resume**
+7. Download your tailored resume files
+
+### Using the API Directly
+
+```bash
+# Health check
+curl http://localhost:5000/health
+
+# Parse your resume
+curl http://localhost:5000/resume/parse
+
+# Tailor resume
+curl -X POST http://localhost:5000/tailor \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_description": "We are looking for a Senior Software Engineer...",
+    "job_title": "Senior Software Engineer",
+    "company": "TechCorp",
+    "output_formats": ["pdf", "docx"]
+  }'
+
+# Download generated file
+curl -O http://localhost:5000/download/resume_tailored_TechCorp_20240115_143022.pdf
+```
 
 ## Project Structure
 
@@ -127,134 +149,183 @@ uvicorn app:app --host 127.0.0.1 --port 5000 --reload
 resume-tailor/
 ├── backend/
 │   ├── app.py                 # FastAPI application
-│   ├── config.py              # Centralized configuration
-│   ├── logger.py              # Centralized logging service
+│   ├── config.py              # Configuration management
+│   ├── logger.py              # Centralized logging
 │   ├── models.py              # Pydantic models
 │   ├── exceptions.py          # Custom exceptions
 │   ├── services/
-│   │   ├── resume_parser.py   # Resume parsing (PDF/DOCX)
+│   │   ├── resume_parser.py   # PDF/DOCX parsing
 │   │   ├── gemini_service.py  # Gemini AI integration
 │   │   └── document_gen.py    # PDF/DOCX generation
 │   ├── outputs/               # Generated resumes
 │   ├── logs/                  # Application logs
 │   └── requirements.txt
 │
-├── extension/                 # Chrome extension (Phase 5-6)
-│   ├── manifest.json
-│   ├── popup.html
-│   ├── popup.js
-│   └── content.js
+├── extension/
+│   ├── manifest.json          # Extension config
+│   ├── popup.html             # Extension UI
+│   ├── popup.css              # Extension styles
+│   ├── popup.js               # Extension logic
+│   ├── content.js             # Page content extraction
+│   ├── background.js          # Service worker
+│   └── icons/                 # Extension icons
 │
-├── resume/                    # Your base resume(s)
-│   └── (your resume here)
-│
-├── .env                       # Environment configuration
-├── .env.example               # Example configuration
-├── .gitignore
+├── resume/                    # Your base resume
+├── .env                       # Configuration
 └── README.md
 ```
-
-## Configuration Reference
-
-All configuration is done via `.env` file:
-
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key | - |
-| `RESUME_FILENAME` | Yes | Resume filename in /resume | - |
-| `RESUME_DIR_NAME` | No | Resume directory name | `resume` |
-| `GEMINI_MODEL` | No | Gemini model to use | `gemini-1.5-flash` |
-| `HOST` | No | Server host | `127.0.0.1` |
-| `PORT` | No | Server port | `5000` |
-| `DEBUG` | No | Enable debug mode | `false` |
-| `LOG_LEVEL` | No | Logging level | `INFO` |
-| `LOG_JSON` | No | JSON formatted logs | `false` |
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check and dependency status |
-| GET | `/config` | Current configuration (non-sensitive) |
-| GET | `/resume/info` | Resume file information |
-| POST | `/tailor` | Tailor resume to job description |
-| GET | `/docs` | Interactive API documentation |
+| GET | `/health` | Health check |
+| GET | `/config` | Current configuration |
+| GET | `/resume/info` | Resume file info |
+| GET | `/resume/parse` | Parse and analyze resume |
+| POST | `/tailor` | Tailor resume to job |
+| POST | `/job/extract` | Extract job details |
+| GET | `/gemini/test` | Test Gemini connection |
+| GET | `/download/{filename}` | Download generated file |
+| GET | `/files` | List generated files |
+| DELETE | `/files/cleanup` | Remove old files |
+| GET | `/docs` | API documentation |
 
-## Logging
+## Configuration
 
-Logs are written to:
-- **Console:** Colored output for development
-- **app.log:** All application logs (rotating, 10MB max)
-- **error.log:** Error-level logs only
-- **app.json.log:** JSON formatted logs (when `LOG_JSON=true`)
+All configuration via `.env` file:
 
-### Log Levels
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GEMINI_API_KEY` | Yes | - | Your Gemini API key |
+| `RESUME_FILENAME` | Yes | - | Your resume filename |
+| `GEMINI_MODEL` | No | `gemini-1.5-flash` | Gemini model |
+| `HOST` | No | `127.0.0.1` | Server host |
+| `PORT` | No | `5000` | Server port |
+| `DEBUG` | No | `false` | Debug mode |
+| `LOG_LEVEL` | No | `INFO` | Log level |
+| `LOG_JSON` | No | `false` | JSON logging |
 
-| Level | Usage |
-|-------|-------|
-| DEBUG | Detailed debugging information |
-| INFO | General operational messages |
-| WARNING | Warning messages |
-| ERROR | Error messages |
-| CRITICAL | Critical errors |
+## Supported Job Sites
+
+The extension automatically extracts job descriptions from:
+
+- ✅ LinkedIn Jobs
+- ✅ Indeed
+- ✅ Glassdoor
+- ✅ ZipRecruiter
+- ✅ Lever.co
+- ✅ Greenhouse.io
+- ✅ Workday
+- ✅ SmartRecruiters
+- ✅ Most company career pages
+
+For unsupported sites, simply copy and paste the job description.
+
+## Troubleshooting
+
+### Server won't start
+
+1. Check `.env` file exists and has valid `GEMINI_API_KEY`
+2. Verify resume file exists in `resume/` directory
+3. Check logs: `backend/logs/app.log`
+
+### Extension shows "Server not running"
+
+1. Make sure backend is running: `python app.py`
+2. Check if server is on correct port (default: 5000)
+3. Try refreshing the extension
+
+### "Resume file not found"
+
+1. Place your resume in the `resume/` directory
+2. Update `RESUME_FILENAME` in `.env` to match exactly
+
+### Extraction not working
+
+1. Some sites have anti-scraping measures
+2. Try selecting text and right-click → "Tailor Resume with Selected Text"
+3. Or manually copy/paste the job description
+
+### PDF generation fails
+
+Install system dependencies:
+```bash
+# Ubuntu/Debian
+sudo apt-get install libpango-1.0-0 libpangocairo-1.0-0
+
+# macOS
+brew install pango
+
+# Windows - usually works out of the box
+```
 
 ## Development
+
+### Running in Development Mode
+
+```bash
+# Backend with auto-reload
+cd backend
+DEBUG=true python app.py
+
+# Or with uvicorn directly
+uvicorn app:app --reload --host 127.0.0.1 --port 5000
+```
 
 ### Running Tests
 
 ```bash
-pytest backend/tests/ -v
+pip install pytest pytest-asyncio pytest-cov
+pytest backend/tests/ -v --cov=backend
 ```
 
-### Type Checking
+### Code Quality
 
 ```bash
+pip install black isort mypy
+black backend/
+isort backend/
 mypy backend/
 ```
 
-### Code Formatting
+## Tech Stack
 
-```bash
-pip install black isort
-black backend/
-isort backend/
-```
+**Backend:**
+- FastAPI - Web framework
+- Pydantic - Data validation
+- Google Generative AI - Gemini integration
+- PyMuPDF - PDF parsing
+- python-docx - DOCX parsing/generation
+- FPDF2 - PDF generation
 
-## Troubleshooting
-
-### "RESUME_FILENAME must be set in .env"
-
-Ensure your `.env` file contains:
-```env
-RESUME_FILENAME=your_resume.pdf
-```
-
-### "Resume file not found"
-
-1. Check that your resume file exists in the `resume/` directory
-2. Verify `RESUME_FILENAME` in `.env` matches exactly (case-sensitive)
-3. Ensure file format is supported (.pdf or .docx)
-
-### Server won't start
-
-1. Check logs in `backend/logs/app.log`
-2. Verify `.env` file exists and is properly configured
-3. Ensure all dependencies are installed
-
-### CORS errors
-
-The server accepts requests from Chrome extensions. For other origins, modify `allow_origins` in `app.py`.
+**Extension:**
+- Manifest V3 - Chrome extension
+- Vanilla JavaScript - No framework dependencies
+- Chrome APIs - Storage, scripting, tabs
 
 ## Roadmap
 
 - [x] Phase 1: Backend foundation with centralized logging
-- [ ] Phase 2: Resume parser
-- [ ] Phase 3: Gemini AI integration
-- [ ] Phase 4: Document generation
-- [ ] Phase 5: Chrome extension (basic)
-- [ ] Phase 6: Content extraction
-- [ ] Phase 7: Full integration
+- [x] Phase 2: Resume parser (PDF & DOCX support)
+- [x] Phase 3: Gemini AI integration
+- [x] Phase 4: Document generation (PDF/DOCX output)
+- [x] Phase 5: Chrome extension (basic)
+- [x] Phase 6: Content extraction from job sites
+- [x] Phase 7: Full integration
+- [ ] Future: Multiple resume profiles
+- [ ] Future: Resume history/versioning
+- [ ] Future: Cover letter generation
+- [ ] Future: Interview prep suggestions
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
 MIT License - feel free to use and modify for your needs.
+
+## Disclaimer
+
+This tool is designed to help optimize your resume presentation. Always review the tailored output before submitting applications. The AI suggestions are meant to highlight your existing experience, not fabricate qualifications.

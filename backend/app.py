@@ -29,6 +29,10 @@ setup_logging(
     enable_json=settings.log_json,
 )
 
+# Suppress noisy watchfiles logging
+import logging
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+
 # Now get logger for this module
 logger = get_logger(__name__)
 
@@ -185,13 +189,14 @@ async def resume_tailor_exception_handler(request, exc: ResumeTailorException):
         f"Application error: {exc.error_code} - {exc.message}",
         extra={"error_code": exc.error_code, "details": exc.details},
     )
+    error_response = ErrorResponse(
+        error=exc.error_code,
+        message=exc.message,
+        details=exc.details,
+    )
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(
-            error=exc.error_code,
-            message=exc.message,
-            details=exc.details,
-        ).model_dump(),
+        content=error_response.model_dump(mode='json'),
     )
 
 
@@ -199,13 +204,14 @@ async def resume_tailor_exception_handler(request, exc: ResumeTailorException):
 async def global_exception_handler(request, exc: Exception):
     """Handle unexpected exceptions."""
     logger.exception(f"Unexpected error: {str(exc)}")
+    error_response = ErrorResponse(
+        error="INTERNAL_ERROR",
+        message="An unexpected error occurred",
+        details={"error": str(exc)} if settings.debug else None,
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            error="INTERNAL_ERROR",
-            message="An unexpected error occurred",
-            details={"error": str(exc)} if settings.debug else None,
-        ).model_dump(),
+        content=error_response.model_dump(mode='json'),
     )
 
 
