@@ -1,0 +1,113 @@
+# ===========================================
+# Resume Tailor - Git Ignore
+# ===========================================
+
+# ===========================================
+# Environment & Secrets
+# ===========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ===========================================
+# Python
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ===========================================
+# IDE & Editors
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ===========================================
+# OS Generated
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===========================================
+# Project Specific
+# ===========================================
+
+# Generated outputs (keep directory, ignore contents)
+backend/outputs/*
+!backend/outputs/.gitkeep
+
+# Logs
+backend/logs/*
+!backend/logs/.gitkeep
+*.log
+
+# Uploaded/personal resumes (keep directory, ignore contents)
+resume/*
+!resume/.gitkeep
+!resume/sample_resume.pdf
+
+# Chrome extension - unpacked extension data
+extension/*.crx
+extension/*.pem
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

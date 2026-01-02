@@ -1,0 +1,10 @@
+# Resume Storage Directory
+# 
+# Place your base resume file here.
+# Update RESUME_FILENAME in .env to match your file name.
+#
+# Supported formats:
+# - PDF (.pdf)
+# - Word Document (.docx)
+#
+# Example: my_resume.pdf
